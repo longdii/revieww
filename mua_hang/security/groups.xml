@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <data>
+        <!-- Nhóm quyền cho người dùng -->
+        <record id="group_purchase_user" model="res.groups">
+            <field name="name">Người dùng</field>
+        </record>
+
+        <!-- Nhóm quyền cho quản lý -->
+        <record id="group_purchase_manager" model="res.groups">
+            <field name="name">Quản lý</field>
+        </record>
+    </data>
+</odoo>

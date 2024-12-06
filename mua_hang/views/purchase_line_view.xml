@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <data>
+        <record id="purchase_list_view" model="ir.ui.view">
+            <field name="name">Purchase request line tree</field>
+            <field name="model">purchase.request.line</field>
+            <field name="arch" type="xml">
+                <tree string="Chi tiết yêu cầu mua hàng">
+                    <field name="request_id" optional="show"/>
+                    <field name="product_id" optional="show"/>
+                    <field name="uom_id" optional="show"/>
+                    <field name="qty" optional="show"/>
+                    <field name="qty_approve" optional="show"/>
+                    <field name="total" optional="show"/>
+                </tree>
+            </field>
+        </record>
+        <record id="purchase_request_line_form" model="ir.ui.view">
+            <field name="name">Purchase request line form</field>
+            <field name="model">purchase.request.line</field>
+            <field name="arch" type="xml">
+                <form string="Chi tiết yêu cầu mua hàng">
+                    <sheet>
+                        <group>
+                            <field name="request_id"/>
+                            <field name="product_id"/>
+                            <field name="uom_id"/>
+                            <field name="qty"/>
+                            <field name="qty_approve"/>
+                            <field name="total"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+        <record id="action_purchase_request_line" model="ir.actions.act_window">
+            <field name="name">Purchase Request Line</field>
+            <field name="res_model">purchase.request.line</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    Create a new customer for more
+                </p>
+            </field>
+        </record>
+        <menuitem id="purchase_request_line_menu"
+                  name="Chi tiết yêu cầu mua hàng"
+                  parent="purchase_menu_root"
+                  action="action_purchase_request_line"
+                  sequence="2"/>
+    </data>
+</odoo>
