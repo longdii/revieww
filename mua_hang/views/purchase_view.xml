@@ -18,6 +18,7 @@
                            decoration-success="state == 'approved'"
                            decoration-muted="state == 'cancel'"
                            decoration-info="state == 'wait'"
+                           decoration-primary="state == 'draft'"
                            widget="badge" optional="show"/>
                 </tree>
             </field>
@@ -29,19 +30,24 @@
             <field name="arch" type="xml">
                 <form string="Yêu cầu mua hàng">
                     <header>
+                        <!--Statusbar-->
                         <field name="state" widget="statusbar" statusbar_visible="draft,wait,approved,cancel"/>
-
+                        <!--Nút Yêu cầu phê duyệt-->
                         <button name="action_submit" string="Yêu cầu phê duyệt" type="object" class="btn-primary"
-                                invisible="state != 'draft'"/>
-
+                                invisible="state != 'draft'" groups="mua_hang.purchase_group_user"/>
+                        <!--Nút Quay lại-->
                         <button name="action_reset_to_draft" string="Quay lại" type="object" class="btn-secondary"
-                                invisible="state != 'wait'"/>
-
+                                invisible="state != 'wait'" groups="mua_hang.purchase_group_user"/>
+                        <!--Nút Phê duyệt-->
                         <button name="action_approve" string="Phê duyệt" type="object" class="btn-success"
-                                invisible="state != 'wait'"/>
-
+                                invisible="state != 'wait'" groups="mua_hang.purchase_group_admin"/>
+                        <!--Nút Từ chối-->
                         <button name="action_cancel" string="Từ chối" type="object" class="btn-danger"
-                                invisible="state != 'wait'"/>
+                                invisible="state != 'wait'" groups="mua_hang.purchase_group_admin"/>
+                        <button name="export_to_excel" string="Xuất Excel" type="object" class="btn-primary"
+                                invisible="state != 'approved'"/>
+                        <button name="send_email_to_creator" string="Gửi Email" type="object" class="btn-primary"
+                                invisible="state != 'approved'"/>
                     </header>
                     <sheet>
                         <div class="oe_title">
@@ -65,31 +71,26 @@
                                 <field name="reject_reason"
                                        modifiers="{'invisible': [('state', '!=', 'cancel')]}"/>
                             </group>
-                            <group>
-                                <field name="request_line_ids">
-                                    <tree>
-                                        <field name="request_id"/>
-                                        <field name="product_id"/>
-                                        <field name="uom_id"/>
-                                        <field name="qty"/>
-                                        <field name="qty_approve"/>
-                                        <field name="total"/>
-                                    </tree>
-                                    <form>
-                                        <field name="request_id"/>
-                                        <field name="product_id"/>
-                                        <field name="uom_id"/>
-                                        <field name="qty"/>
-                                        <field name="qty_approve"/>
-                                        <field name="total"/>
-                                    </form>
-                                </field>
-                            </group>
+                            <notebook>
+                                <!-- Tab Sản phẩm -->
+                                <page string="Sản phẩm">
+                                    <field name="request_line_ids" nolabel="1" widget="one2many_list">
+                                        <tree>
+                                            <field name="product_id"/>
+                                            <field name="uom_id"/>
+                                            <field name="qty"/>
+                                            <field name="qty_approve"/>
+                                            <field name="total"/>
+                                        </tree>
+                                    </field>
+                                </page>
+                            </notebook>
                         </group>
                     </sheet>
                 </form>
             </field>
         </record>
+        <!--Menu-->
         <record id="action_purchase_request" model="ir.actions.act_window">
             <field name="name">Purchase Request</field>
             <field name="res_model">purchase.request</field>
@@ -107,6 +108,7 @@
                   name="Yêu cầu mua hàng"
                   parent="purchase_menu_root"
                   action="action_purchase_request"
-                  sequence="2"/>
+                  sequence="1"/>
+
     </data>
 </odoo>

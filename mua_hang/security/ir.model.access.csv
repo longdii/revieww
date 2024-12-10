@@ -1,3 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_purchase_admin,Admin purchase,model_purchase_request,,1,1,1,1
-access_purchase_line_admin,Admin purchase line,model_purchase_request_line,,1,1,1,1
+access_purchase_user,purchase.user,model_purchase_request,purchase_group_user,1,1,1,0
+access_purchase_admin,purchase.admin,model_purchase_request,purchase_group_admin,1,1,1,1
+access_purchase_line_user,purchase.line.user,model_purchase_request_line,purchase_group_user,1,1,1,0
+access_purchase_line_admin,purchase.line.admin,model_purchase_request_line,purchase_group_admin,1,1,1,1

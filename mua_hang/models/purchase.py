@@ -1,5 +1,8 @@
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+from io import BytesIO
+import xlsxwriter
+import base64
 
 
 class Purchase(models.Model):
@@ -8,7 +11,7 @@ class Purchase(models.Model):
 
     name = fields.Char(string="Yêu cầu tham chiếu", required=True, readonly=True, default="New")
     department_id = fields.Many2one('hr.department', string='Phòng ban', required=True,)
-    request_id = fields.Many2one('res.users', string='Người yêu cầu', required=True)
+    request_id = fields.Many2one('res.users', string='Được yêu cầu bởi', required=True)
     approver_id = fields.Many2one('res.users', string='Người phê duyệt', readonly=True)
     date = fields.Date(string='Ngày yêu cầu', default=fields.Date.context_today)
     date_approve = fields.Date(string='Ngày phê duyệt', readonly=True)
@@ -24,22 +27,26 @@ class Purchase(models.Model):
     total_amount = fields.Float(string='Tổng giá trị', compute='_compute_total_amount', store=True)
     reject_reason = fields.Text(string='Lý do từ chối')
 
+    # PR + số tự sinh của name
     @api.model
     def create(self, vals):
         if vals.get('name', 'New') == 'New':
             vals['name'] = self.env['ir.sequence'].next_by_code('purchase.request.sequence') or 'New'
         return super(Purchase, self).create(vals)
 
+    # Tổng số lượng
     @api.depends('request_line_ids.qty')
     def _compute_total_qty(self):
         for record in self:
             record.total_qty = sum(line.qty for line in record.request_line_ids)
 
+    # Tổng giá trị
     @api.depends('request_line_ids.total')
     def _compute_total_amount(self):
         for record in self:
             record.total_amount = sum(line.total for line in record.request_line_ids)
 
+    # Gửi yêu cầu dự thảo
     def action_submit(self):
         for record in self:
             if record.state != 'draft':
@@ -83,6 +90,78 @@ class Purchase(models.Model):
             record.state = 'approved'
             record.date_approve = fields.Date.context_today(self)
             record.approver_id = self.env.user.id
+
+    def export_to_excel(self):
+        for record in self:
+            # Tạo file Excel
+            output = BytesIO()
+            workbook = xlsxwriter.Workbook(output)
+            worksheet = workbook.add_worksheet("Yêu cầu mua hàng")
+            # Định dạng cột
+            bold = workbook.add_format({"bold": True})
+            worksheet.write(0, 0, "Sản phẩm", bold)
+            worksheet.write(0, 1, "Số lượng", bold)
+            worksheet.write(0, 2, "Đơn vị tính", bold)
+            worksheet.write(0, 3, "Tổng giá trị", bold)
+
+            # Ghi dữ liệu
+            row = 1
+            for line in record.request_line_ids:
+                worksheet.write(row, 0, line.product_id.name)
+                worksheet.write(row, 1, line.qty)
+                worksheet.write(row, 2, line.uom_id.name)
+                worksheet.write(row, 3, line.total)
+                row += 1
+
+            # Đóng workbook
+            workbook.close()
+            output.seek(0)
+
+            # Lưu file
+            file_data = base64.b64encode(output.read())
+            output.close()
+
+            # Tạo attachment
+            attachment = self.env['ir.attachment'].create({
+                'name': 'purchase_request.xlsx',
+                'type': 'binary',
+                'datas': file_data,
+                'store_fname': 'purchase_request.xlsx',
+                'mimetype': 'application/vnd.ms-excel',
+            })
+
+            # Trả về liên kết tải về
+            return {
+                'type': 'ir.actions.act_url',
+                'url': f'/web/content/{attachment.id}?download=true',
+                'target': 'new',
+            }
+
+    def send_email_to_creator(self):
+        for record in self:
+            # Lấy người tạo phiếu
+            creator = record.create_uid
+
+            # Tạo nội dung email
+            subject = f"Phiếu yêu cầu mua hàng {record.name} đã được duyệt"
+            body = f"Chào {creator.name},\n\nPhiếu yêu cầu mua hàng {record.name} đã được duyệt thành công."
+
+            # Gửi email
+            template = self.env.ref('mua_hang.purchase_request_approval_email_template')
+            if template:
+                template.sudo().send_mail(record.id, force_send=True)
+
+            # Hoặc có thể sử dụng phương thức message_post để gửi email thủ công
+            # Chú ý rằng message_post sẽ tạo một bài viết trong nội dung ghi chú và gửi email.
+            record.message_post(
+                body=body,
+                subject=subject,
+                message_type='email',
+                partner_ids=[creator.partner_id.id]
+            )
+
+        return True
+
 
 class PurchaseLine(models.Model):
     _name = "purchase.request.line"
