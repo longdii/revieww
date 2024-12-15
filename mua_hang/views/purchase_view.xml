@@ -58,23 +58,23 @@
                         </div>
                         <group>
                             <group>
-                                <field name="department_id"></field>
-                                <field name="request_id"></field>
+                                <field name="department_id" readonly="state != 'draft'"></field>
+                                <field name="request_id" readonly="state != 'draft'"></field>
                                 <field name="approver_id" readonly="1"></field>
-                                <field name="date"></field>
+                                <field name="date" readonly="state != 'draft'"></field>
                                 <field name="date_approve" readonly="1"></field>
                             </group>
                             <group>
-                                <field name="description"></field>
+                                <field name="description" readonly="state != 'draft'"></field>
                                 <field name="total_qty"></field>
                                 <field name="total_amount"></field>
                                 <field name="reject_reason"
-                                       modifiers="{'invisible': [('state', '!=', 'cancel')]}"/>
+                                       invisible="state not in ('cancel', 'wait')"/>
                             </group>
                             <notebook>
                                 <!-- Tab Sản phẩm -->
                                 <page string="Sản phẩm">
-                                    <field name="request_line_ids" nolabel="1" widget="one2many_list">
+                                    <field name="request_line_ids" nolabel="1" widget="one2many_list" readonly="state != 'draft'">
                                         <tree>
                                             <field name="product_id"/>
                                             <field name="uom_id"/>

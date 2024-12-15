@@ -10,8 +10,8 @@ class Purchase(models.Model):
     _description = "Purchase Request"
 
     name = fields.Char(string="Yêu cầu tham chiếu", required=True, readonly=True, default="New")
-    department_id = fields.Many2one('hr.department', string='Phòng ban', required=True,)
-    request_id = fields.Many2one('res.users', string='Được yêu cầu bởi', required=True)
+    department_id = fields.Many2one('hr.department', string='Phòng ban', required=True, default=lambda self: self._get_default_department())
+    request_id = fields.Many2one('res.users', string='Được yêu cầu bởi', required=True, default=lambda self: self.env.user.id)
     approver_id = fields.Many2one('res.users', string='Người phê duyệt', readonly=True)
     date = fields.Date(string='Ngày yêu cầu', default=fields.Date.context_today)
     date_approve = fields.Date(string='Ngày phê duyệt', readonly=True)
@@ -25,7 +25,7 @@ class Purchase(models.Model):
     ], string='Trạng thái', default='draft')
     total_qty = fields.Float(string='Tổng số lượng', compute='_compute_total_qty', store=True)
     total_amount = fields.Float(string='Tổng giá trị', compute='_compute_total_amount', store=True)
-    reject_reason = fields.Text(string='Lý do từ chối')
+    reject_reason = fields.Text(string='Lý do từ chối', groups="mua_hang.purchase_group_admin")
 
     # PR + số tự sinh của name
     @api.model
@@ -33,6 +33,13 @@ class Purchase(models.Model):
         if vals.get('name', 'New') == 'New':
             vals['name'] = self.env['ir.sequence'].next_by_code('purchase.request.sequence') or 'New'
         return super(Purchase, self).create(vals)
+
+    # Mặc định phòng ban của người dùng
+    @api.model
+    def _get_default_department(self):
+        # Lấy nhân viên liên kết với người dùng hiện tại
+        employee = self.env['hr.employee'].search([('user_id', '=', self.env.user.id)], limit=1)
+        return employee.department_id.id if employee and employee.department_id else False
 
     # Tổng số lượng
     @api.depends('request_line_ids.qty')
@@ -53,12 +60,14 @@ class Purchase(models.Model):
                 raise UserError("Chỉ có thể gửi yêu cầu ở trạng thái dự thảo.")
             record.state = 'wait'
 
+    # Quay lại yêu cầu dự thảo
     def action_reset_to_draft(self):
         for record in self:
             if record.state != 'wait':
                 raise UserError("Chỉ có thể quay lại từ trạng thái chờ phê duyệt.")
             record.state = 'draft'
 
+    # Phê duyệt yêu cầu dự thảo
     def action_approve(self):
         for record in self:
             if record.state != 'wait':
@@ -68,6 +77,7 @@ class Purchase(models.Model):
             record.approver_id = self.env.user.id
             record.state = 'approved'
 
+    # Huỷ yêu cầu dự thảo
     def action_cancel(self):
         for record in self:
             if record.state != 'wait':
@@ -76,6 +86,7 @@ class Purchase(models.Model):
                 raise UserError("Vui lòng nhập lý do từ chối.")
             record.state = 'cancel'
 
+    # Không xoá bản ghi khác dự thảo
     def unlink(self):
         for record in self:
             if record.state != 'draft':
@@ -83,14 +94,7 @@ class Purchase(models.Model):
             record.request_line_ids.unlink()
         return super(Purchase, self).unlink()
 
-    def action_browse(self):
-        for record in self:
-            if record.state != 'wait':
-                raise UserError(f"Phiếu yêu cầu '{record.name}' không ở trạng thái Chờ phê duyệt.")
-            record.state = 'approved'
-            record.date_approve = fields.Date.context_today(self)
-            record.approver_id = self.env.user.id
-
+    # Xuất excel
     def export_to_excel(self):
         for record in self:
             # Tạo file Excel
@@ -137,6 +141,7 @@ class Purchase(models.Model):
                 'target': 'new',
             }
 
+    # Gửi mail
     def send_email_to_creator(self):
         for record in self:
             # Lấy người tạo phiếu
@@ -162,34 +167,50 @@ class Purchase(models.Model):
 
         return True
 
-
 class PurchaseLine(models.Model):
     _name = "purchase.request.line"
     _description = "Purchase Request Line"
 
-    request_id = fields.Many2one('purchase.request', sring='Yêu cầu mua hàng', required=True)
+    request_id = fields.Many2one('purchase.request', sring='Yêu cầu mua hàng')
     product_id = fields.Many2one('product.template', string='Sản phẩm', required=True)
     uom_id = fields.Many2one('uom.uom', string='Đơn vị tính', required=True)
     qty = fields.Float(string='Số lượng yêu cầu', required=True, default=1.0)
     qty_approve = fields.Float(string='Số lượng phê duyệt', default=0.0)
     total = fields.Float(string='Tổng giá trị', compute='_compute_total', store=True)
+    sequence = fields.Integer(string='STT', default=0, readonly=True)
 
+    # Tông giá sản phẩm
     @api.depends('qty', 'product_id')
     def _compute_total(self):
         for line in self:
             line.total = line.qty * (line.product_id.list_price or 0.0)
 
+    # Cộng dồn sản phẩm khi trùng sản phẩm
     @api.model
     def create(self, vals):
         request = self.env['purchase.request'].browse(vals.get('request_id'))
         if request.state != 'draft':
             raise UserError("Không thể thêm chi tiết yêu cầu khi trạng thái không phải là Dự thảo.")
-        return super(PurchaseLine, self).create(vals)
+        # Kiểm tra nếu sản phẩm đã tồn tại trong danh sách dòng sản phẩm
+        existing_line = self.env['purchase.request.line'].search([
+            ('request_id', '=', vals.get('request_id')),
+            ('product_id', '=', vals.get('product_id')),
+        ], limit=1)
+
+        if existing_line:
+            # Cộng dồn số lượng nếu sản phẩm đã tồn tại
+            existing_line.qty += vals.get('qty', 1.0)
+            return existing_line
+        else:
+            # Nếu không tồn tại, tạo dòng mới
+            return super(PurchaseLine, self).create(vals)
 
     def write(self, vals):
-        for line in self:
-            if line.request_id.state != 'draft':
-                raise UserError("Không thể chỉnh sửa chi tiết yêu cầu khi trạng thái không phải là Dự thảo.")
+        # Ngăn sửa đổi sản phẩm nếu đã được phê duyệt
+        if 'product_id' in vals or 'qty' in vals:
+            for line in self:
+                if line.request_id.state != 'draft':
+                    raise UserError("Không thể chỉnh sửa chi tiết yêu cầu khi trạng thái không phải là Dự thảo.")
         return super(PurchaseLine, self).write(vals)
 
     def unlink(self):
@@ -197,6 +218,10 @@ class PurchaseLine(models.Model):
             if line.request_id.state != 'draft':
                 raise UserError("Không thể xóa chi tiết yêu cầu khi trạng thái không phải là Dự thảo.")
         return super(PurchaseLine, self).unlink()
+
+
+
+
 
 
 
