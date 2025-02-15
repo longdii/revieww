@@ -8,14 +8,18 @@ import base64
 class Purchase(models.Model):
     _name = "purchase.request"
     _description = "Purchase Request"
+    _inherit = ['mail.thread', 'mail.activity.mixin']
 
     name = fields.Char(string="Yêu cầu tham chiếu", required=True, readonly=True, default="New")
-    department_id = fields.Many2one('hr.department', string='Phòng ban', required=True, default=lambda self: self._get_default_department())
-    request_id = fields.Many2one('res.users', string='Được yêu cầu bởi', required=True, default=lambda self: self.env.user.id)
+    department_id = fields.Many2one('hr.department', string='Phòng ban', required=True,
+                                    default=lambda self: self._get_default_department())
+    request_id = fields.Many2one('res.users', string='Được yêu cầu bởi', required=True,
+                                 default=lambda self: self.env.user.id)
     approver_id = fields.Many2one('res.users', string='Người phê duyệt', readonly=True)
     date = fields.Date(string='Ngày yêu cầu', default=fields.Date.context_today)
     date_approve = fields.Date(string='Ngày phê duyệt', readonly=True)
-    request_line_ids = fields.One2many('purchase.request.line', 'request_id', string='Chi tiết yêu cầu mua hàng')
+    request_line_ids = fields.One2many('purchase.request.line', 'request_id', string='Chi tiết yêu cầu mua hàng',
+                                       required=True)
     description = fields.Text(string='Mô tả')
     state = fields.Selection([
         ('draft', 'Dự thảo'),
@@ -25,7 +29,9 @@ class Purchase(models.Model):
     ], string='Trạng thái', default='draft')
     total_qty = fields.Float(string='Tổng số lượng', compute='_compute_total_qty', store=True)
     total_amount = fields.Float(string='Tổng giá trị', compute='_compute_total_amount', store=True)
-    reject_reason = fields.Text(string='Lý do từ chối', groups="mua_hang.purchase_group_admin")
+    reject_reason = fields.Text(string='Lý do từ chối')
+    priority = fields.Selection(
+        [('0', 'Normal'), ('1', 'Urgent')], 'Priority', default='0', index=True)
 
     # PR + số tự sinh của name
     @api.model
@@ -79,12 +85,17 @@ class Purchase(models.Model):
 
     # Huỷ yêu cầu dự thảo
     def action_cancel(self):
-        for record in self:
-            if record.state != 'wait':
-                raise UserError("Chỉ có thể từ chối yêu cầu ở trạng thái chờ phê duyệt.")
-            if not record.reject_reason:
-                raise UserError("Vui lòng nhập lý do từ chối.")
-            record.state = 'cancel'
+        return {
+            'name': 'Lý do từ chối',
+            'type': 'ir.actions.act_window',
+            'res_model': 'reject.reason.wizard',
+            'view_mode': 'form',
+            'target': 'new',  # Mở popup wizard
+            'context': {'default_reject_reason': ''},
+        }
+
+    def action_view_invoice(self):
+        pass
 
     # Không xoá bản ghi khác dự thảo
     def unlink(self):
@@ -143,29 +154,29 @@ class Purchase(models.Model):
 
     # Gửi mail
     def send_email_to_creator(self):
-        for record in self:
-            # Lấy người tạo phiếu
-            creator = record.create_uid
+        """Open email composition wizard with preloaded template."""
+        self.ensure_one()
+        template_id = self.env.ref('mua_hang.email_template_purchase_request_2').id
+        compose_form_id = self.env.ref('mail.email_compose_message_wizard_form').id
 
-            # Tạo nội dung email
-            subject = f"Phiếu yêu cầu mua hàng {record.name} đã được duyệt"
-            body = f"Chào {creator.name},\n\nPhiếu yêu cầu mua hàng {record.name} đã được duyệt thành công."
+        ctx = {
+            'default_model': 'purchase.request',
+            'default_res_ids': [self.id],
+            'default_template_id': template_id,
+            'default_composition_mode': 'comment',
+            'force_email': True,
+        }
 
-            # Gửi email
-            template = self.env.ref('mua_hang.purchase_request_approval_email_template')
-            if template:
-                template.sudo().send_mail(record.id, force_send=True)
+        return {
+            'type': 'ir.actions.act_window',
+            'view_mode': 'form',
+            'res_model': 'mail.compose.message',
+            'views': [(compose_form_id, 'form')],
+            'view_id': compose_form_id,
+            'target': 'new',
+            'context': ctx,
+        }
 
-            # Hoặc có thể sử dụng phương thức message_post để gửi email thủ công
-            # Chú ý rằng message_post sẽ tạo một bài viết trong nội dung ghi chú và gửi email.
-            record.message_post(
-                body=body,
-                subject=subject,
-                message_type='email',
-                partner_ids=[creator.partner_id.id]
-            )
-
-        return True
 
 class PurchaseLine(models.Model):
     _name = "purchase.request.line"
@@ -218,6 +229,33 @@ class PurchaseLine(models.Model):
             if line.request_id.state != 'draft':
                 raise UserError("Không thể xóa chi tiết yêu cầu khi trạng thái không phải là Dự thảo.")
         return super(PurchaseLine, self).unlink()
+
+
+class RejectReasonWizard(models.TransientModel):
+    _name = 'reject.reason.wizard'
+    _description = 'Reject Reason Wizard'
+
+    reject_reason = fields.Text(string="Lý do từ chối")
+    reject_type = fields.Selection([
+        ('not_suitable', 'Không phù hợp'),
+        ('too_expensive', 'Quá đắt'),
+        ('other', 'Lý do khác')
+    ], string="Lý do từ chối", required=True, default='not_suitable')
+
+    def action_confirm_reject(self):
+        # Lấy active_id (ID của bản ghi purchase.request đang mở)
+        active_id = self.env.context.get('active_id')
+        purchase_request = self.env['purchase.request'].browse(active_id)
+
+        if purchase_request:
+            # Tạo lý do từ chối
+            reason = self.reject_reason if self.reject_type == 'other' else dict(
+                self._fields['reject_type'].selection).get(self.reject_type)
+            # Cập nhật lý do từ chối và trạng thái
+            purchase_request.write({
+                'reject_reason': reason,
+                'state': 'cancel',
+            })
 
 
 

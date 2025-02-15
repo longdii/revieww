@@ -6,6 +6,11 @@
             <field name="model">purchase.request</field>
             <field name="arch" type="xml">
                 <tree string="Yêu cầu mua hàng">
+                    <header>
+                        <!--Phê duyệt hàng loạt-->
+                        <button name="action_approve" string="Phê Duyệt" type="object" class="btn-success" groups="mua_hang.purchase_group_admin"/>
+                    </header>
+                    <field name="priority" optional="show" widget="priority" nolabel="1"/>
                     <field name="name" optional="show"/>
                     <field name="department_id" optional="show"/>
                     <field name="request_id" optional="show"/>
@@ -20,6 +25,7 @@
                            decoration-info="state == 'wait'"
                            decoration-primary="state == 'draft'"
                            widget="badge" optional="show"/>
+
                 </tree>
             </field>
         </record>
@@ -47,12 +53,22 @@
                         <button name="export_to_excel" string="Xuất Excel" type="object" class="btn-primary"
                                 invisible="state != 'approved'"/>
                         <button name="send_email_to_creator" string="Gửi Email" type="object" class="btn-primary"
-                                invisible="state != 'approved'"/>
+                                invisible="state != 'approved'" groups="mua_hang.purchase_group_admin"/>
                     </header>
                     <sheet>
+                        <div class="oe_button_box" name="button_box">
+                            <button type="object" name="action_view_invoice"
+                                    class="oe_stat_button"
+                                    icon="fa-pencil-square-o"
+                                    invisible="state != 'approved'"
+                                    string="Vendor Bills">
+                            </button>
+                        </div>
+
                         <div class="oe_title">
                             <label for="name"></label>
-                            <h1>
+                            <h1 class="d-flex">
+                                <field name="priority" widget="priority" class="me-3"/>
                                 <field name="name"></field>
                             </h1>
                         </div>
@@ -69,7 +85,7 @@
                                 <field name="total_qty"></field>
                                 <field name="total_amount"></field>
                                 <field name="reject_reason"
-                                       invisible="state not in ('cancel', 'wait')"/>
+                                       invisible="state not in ('cancel')"/>
                             </group>
                             <notebook>
                                 <!-- Tab Sản phẩm -->
@@ -88,6 +104,19 @@
                         </group>
                     </sheet>
                 </form>
+            </field>
+        </record>
+
+        <record id="purchase_request_view_search" model="ir.ui.view">
+            <field name="name">Purchase Search</field>
+            <field name="model">purchase.request</field>
+            <field name="arch" type="xml">
+                <search string="Search Purchase Request">
+                    <field name="create_uid"/>
+                    <filter name="my_purchases" string="My Purchases" domain="[('create_uid', '=', uid)]"/>
+                    <filter string="Starred" name="starred" domain="[('priority', '=', '1')]"/>
+                    <filter string="Được Phê Duyệt" name="pass" domain="[('state', '=', 'approved')]"/>
+                </search>
             </field>
         </record>
         <!--Menu-->

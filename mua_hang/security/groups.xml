@@ -36,7 +36,7 @@
     <record id="purchase_admin_rule" model="ir.rule">
        <field name="name">Admin see all records</field>
        <field name="model_id" ref="mua_hang.model_purchase_request" />
-       <field name="domain_force">[(1, '=', 1)]</field> <!-- Admin không bị giới hạn bởi domain -->
+       <field name="domain_force">[('department_id', '=', user.department_id.id)]</field> <!-- Admin không bị giới hạn bởi domain -->
        <field name="groups" eval="[(4, ref('purchase_group_admin'))]" />
     </record>
 </odoo>
